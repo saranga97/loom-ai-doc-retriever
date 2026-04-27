@@ -1,0 +1,42 @@
+# =====================================================================
+# Loom AI - Document Retriever | Docker Compose
+# =====================================================================
+# Runs Weaviate vector database locally for the Document Retriever.
+#
+# Usage:
+#   docker compose up -d          Start Weaviate in background
+#   docker compose down            Stop Weaviate
+#   docker compose down -v         Stop and remove all data (volumes)
+#   docker compose logs -f         Follow Weaviate logs
+#
+# Weaviate REST API: http://localhost:8080
+# Weaviate gRPC:     localhost:50051
+# =====================================================================
+
+services:
+  # --- Weaviate Vector Database (self-hosted) ---
+  # Stores document chunks and their embedding vectors.
+  # Each tenant gets a separate collection (LoomAI_{tenant_name}).
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.28.4
+    ports:
+      - "8080:8080"     # REST API port
+      - "50051:50051"   # gRPC port (used for faster batch operations)
+    volumes:
+      - weaviate_data:/var/lib/weaviate   # Persistent storage for data
+    environment:
+      # Default query result limit
+      QUERY_DEFAULTS_LIMIT: 25
+      # Allow anonymous access (no auth needed for local development)
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      # Where Weaviate stores its data on disk
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      # Disable built-in vectorizer - we provide our own vectors via OpenAI
+      DEFAULT_VECTORIZER_MODULE: "none"
+      # Node name for cluster identification (single-node setup)
+      CLUSTER_HOSTNAME: "node1"
+    restart: on-failure
+
+# Named volume for persistent Weaviate data across container restarts
+volumes:
+  weaviate_data:

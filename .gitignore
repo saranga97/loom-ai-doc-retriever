@@ -1,0 +1,27 @@
+# =====================================================================
+# Loom AI - Document Retriever | Git Ignore
+# =====================================================================
+
+# --- Environment files with secrets ---
+.env
+.env.live
+.env.dev
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- OS ---
+.DS_Store
+Thumbs.db
