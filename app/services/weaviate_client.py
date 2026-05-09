@@ -10,11 +10,17 @@ Weaviate is used as the vector store because:
   - It supports hybrid search (vector + keyword)
   - Self-hosted with no cloud dependency
   - Efficient for multi-tenant setups with separate collections
+
+Connection modes:
+  - Docker (default): Connects to Weaviate running in a Docker container
+  - Embedded: Runs Weaviate as a subprocess (no Docker required)
+    Set WEAVIATE_EMBEDDED=true in your .env file to use this mode
 =====================================================================
 """
 
 import weaviate
 from weaviate.classes.config import Property, DataType, Configure
+from weaviate.embedded import EmbeddedOptions
 from app.config import settings
 
 
@@ -24,36 +30,62 @@ from app.config import settings
 # on shutdown via disconnect().
 # ---------------------------------------------------------------------------
 client: weaviate.WeaviateClient | None = None
+_connected: bool = False
+
+
+def is_connected() -> bool:
+    """Check if the Weaviate client is connected and ready."""
+    return _connected and client is not None
 
 
 def get_client() -> weaviate.WeaviateClient:
     """
     Return the active Weaviate client instance.
-    Raises RuntimeError if connect() hasn't been called yet.
+    Raises RuntimeError if connect() hasn't been called yet or connection failed.
     """
     global client
-    if client is None:
-        raise RuntimeError("Weaviate client not connected. Call connect() first.")
+    if client is None or not _connected:
+        raise RuntimeError(
+            "Weaviate client not connected. "
+            "Ensure Weaviate is running and reachable, then restart the service."
+        )
     return client
 
 
 def connect() -> None:
     """
-    Establish connection to the local Weaviate instance.
-    Parses host and port from the WEAVIATE_URL setting.
-    Example: "http://localhost:8080" -> host="localhost", port=8080
-    """
-    global client
-    # Extract host by removing the http:// prefix and port
-    host = settings.weaviate_url.replace("http://", "").split(":")[0]
-    # Extract port number from the URL
-    port = int(settings.weaviate_url.split(":")[-1])
+    Establish connection to Weaviate.
 
-    client = weaviate.connect_to_local(
-        host=host,
-        port=port,
-        grpc_port=settings.weaviate_grpc_port,  # gRPC port for batch operations
-    )
+    Supports two modes:
+      - Embedded (WEAVIATE_EMBEDDED=true): Runs Weaviate as a subprocess,
+        no Docker required. Data persists in ./weaviate_data/
+      - Docker/External (default): Connects to Weaviate at WEAVIATE_URL
+        (typically a Docker container on localhost:8080)
+
+    Raises WeaviateConnectionError if connection fails.
+    """
+    global client, _connected
+
+    if settings.weaviate_embedded:
+        # --- Embedded mode: no Docker required ---
+        client = weaviate.WeaviateClient(
+            embedded_options=EmbeddedOptions(
+                persistence_data_path="./weaviate_data",
+            )
+        )
+        client.connect()
+    else:
+        # --- External mode: connect to Docker/remote Weaviate ---
+        host = settings.weaviate_url.replace("http://", "").split(":")[0]
+        port = int(settings.weaviate_url.split(":")[-1])
+
+        client = weaviate.connect_to_local(
+            host=host,
+            port=port,
+            grpc_port=settings.weaviate_grpc_port,
+        )
+
+    _connected = True
 
 
 def disconnect() -> None:
@@ -61,10 +93,11 @@ def disconnect() -> None:
     Gracefully close the Weaviate connection.
     Called during application shutdown to release resources.
     """
-    global client
+    global client, _connected
     if client is not None:
         client.close()
         client = None
+    _connected = False
 
 
 # ---------------------------------------------------------------------------
@@ -145,3 +178,17 @@ def collection_exists(tenant_name: str) -> bool:
     """Check if a collection exists for the given tenant name."""
     c = get_client()
     return c.collections.exists(_collection_name(tenant_name))
+
+
+def list_tenant_collections() -> list[str]:
+    """
+    List all tenant names that have a Weaviate collection.
+    Returns tenant names (without the LoomAI_ prefix).
+    """
+    c = get_client()
+    prefix = "LoomAI_"
+    tenant_names = []
+    for name in c.collections.list_all().keys():
+        if name.startswith(prefix):
+            tenant_names.append(name[len(prefix):])
+    return tenant_names

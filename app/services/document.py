@@ -133,7 +133,12 @@ def get_documents(tenant_name: str, limit: int = 100, offset: int = 0) -> dict:
 
     Returns:
         Dict with tenant_name, list of documents, and total count
+
+    Raises:
+        ValueError: If the tenant collection does not exist
     """
+    if not weaviate_client.collection_exists(tenant_name):
+        raise ValueError(f"Tenant '{tenant_name}' not found")
     collection = weaviate_client.get_collection(tenant_name)
 
     # Fetch objects from Weaviate (we fetch extra to account for multiple chunks per doc)
@@ -177,7 +182,12 @@ def get_document(tenant_name: str, doc_id: int) -> dict | None:
 
     Returns:
         Dict with full document data including chunks, or None if not found
+
+    Raises:
+        ValueError: If the tenant collection does not exist
     """
+    if not weaviate_client.collection_exists(tenant_name):
+        raise ValueError(f"Tenant '{tenant_name}' not found")
     collection = weaviate_client.get_collection(tenant_name)
 
     # Filter by doc_id to get all chunks belonging to this document
@@ -327,6 +337,8 @@ def search(
     Returns:
         Dict with tenant_name, query, ranked results list, and total count
     """
+    if not weaviate_client.collection_exists(tenant_name):
+        raise ValueError(f"Tenant '{tenant_name}' not found")
     collection = weaviate_client.get_collection(tenant_name)
 
     # Step 1: Convert the search query into an embedding vector
@@ -402,7 +414,12 @@ def _delete_doc_chunks(tenant_name: str, doc_id: int) -> bool:
 
     Returns:
         True if chunks were found and deleted, False if no chunks existed
+
+    Raises:
+        ValueError: If the tenant collection does not exist
     """
+    if not weaviate_client.collection_exists(tenant_name):
+        raise ValueError(f"Tenant '{tenant_name}' not found")
     collection = weaviate_client.get_collection(tenant_name)
 
     # Find all chunks for this doc_id
