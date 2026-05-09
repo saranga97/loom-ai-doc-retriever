@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # --- General -----------------------------------------------------------
     # "live" or "dev" - controls reload behavior and logging level
-    environment: str = "live"
+    environment: str = "dev"
 
     # Port on which the FastAPI server will listen
     doc_retriever_port: int = 8001
@@ -55,6 +55,11 @@ class Settings(BaseSettings):
 
     # gRPC port for Weaviate (used for faster batch operations)
     weaviate_grpc_port: int = 50051
+
+    # Use Weaviate Embedded mode (no Docker required).
+    # Set to True to run Weaviate as a subprocess instead of connecting
+    # to an external Docker container. Data persists in ./weaviate_data/
+    weaviate_embedded: bool = False
 
     # --- OpenAI (Embeddings) -----------------------------------------------
     # API key for OpenAI - used to generate text embeddings

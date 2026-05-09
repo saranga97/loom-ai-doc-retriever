@@ -12,12 +12,13 @@ It sets up the FastAPI application with:
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.services import weaviate_client
-from app.routers import documents
+from app.routers import documents, tenants
 
 
 # ---------------------------------------------------------------------------
@@ -28,9 +29,22 @@ from app.routers import documents
 # ---------------------------------------------------------------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- Startup: establish Weaviate connection ---
-    weaviate_client.connect()
-    print(f"[Loom AI] Connected to Weaviate at {settings.weaviate_url}")
+    # --- Startup: attempt Weaviate connection ---
+    try:
+        weaviate_client.connect()
+        if settings.weaviate_embedded:
+            print("[Loom AI] Connected to Weaviate (embedded mode)")
+        else:
+            print(f"[Loom AI] Connected to Weaviate at {settings.weaviate_url}")
+    except Exception as e:
+        print(f"[Loom AI] WARNING: Failed to connect to Weaviate: {e}")
+        if settings.weaviate_embedded:
+            print("[Loom AI] Embedded Weaviate failed to start.")
+        else:
+            print(f"[Loom AI] Is Weaviate running at {settings.weaviate_url}?")
+            print("[Loom AI] Tip: Set WEAVIATE_EMBEDDED=true in .env to run without Docker.")
+        print("[Loom AI] Starting in degraded mode - document endpoints will return errors.")
+
     print(f"[Loom AI] Environment: {settings.environment}")
     print(f"[Loom AI] Embedding model: {settings.embedding_model}")
 
@@ -70,9 +84,29 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------------------------------
+# Exception handler for Weaviate connection errors.
+# Returns HTTP 503 (Service Unavailable) when Weaviate is not connected,
+# instead of crashing with a 500 Internal Server Error.
+# ---------------------------------------------------------------------------
+@app.exception_handler(RuntimeError)
+async def weaviate_not_connected_handler(request: Request, exc: RuntimeError):
+    if "Weaviate" in str(exc):
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": "Weaviate vector database is not available. "
+                          "Please ensure Weaviate is running and restart the service.",
+                "service": "weaviate",
+            },
+        )
+    raise exc
+
+
+# ---------------------------------------------------------------------------
 # Register the documents router - all document CRUD and search endpoints.
 # This adds routes under /api/v1/documents/
 # ---------------------------------------------------------------------------
+app.include_router(tenants.router)
 app.include_router(documents.router)
 
 
@@ -84,9 +118,10 @@ app.include_router(documents.router)
 def health_check():
     """Return service health status and current environment."""
     return {
-        "status": "healthy",
+        "status": "healthy" if weaviate_client.is_connected() else "degraded",
         "service": "document-retriever",
         "environment": settings.environment,
+        "weaviate_connected": weaviate_client.is_connected(),
     }
 
 

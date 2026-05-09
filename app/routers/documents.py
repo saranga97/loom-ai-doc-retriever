@@ -26,16 +26,15 @@ from app.models.schemas import (
     DocumentUpdateRequest,
     SearchRequest,
     SearchResponse,
-    TenantDeleteResponse,
 )
-from app.services import document, weaviate_client
+from app.services import document
 
 # ---------------------------------------------------------------------------
 # Create the router with a common prefix and tag for all document endpoints.
 # The prefix means all routes here are relative to /api/v1/documents/
 # The tag groups these endpoints together in the Swagger UI.
 # ---------------------------------------------------------------------------
-router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
+router = APIRouter(prefix="/api/v1/documents", tags=["Documents"])
 
 
 # ===========================================================================
@@ -76,34 +75,6 @@ async def upload_csv(
 
 
 # ===========================================================================
-# Tenant Management Endpoints
-# ===========================================================================
-# IMPORTANT: These routes use /tenant/{tenant_name} and must be registered
-# BEFORE the dynamic /{tenant_name}/{doc_id} routes, otherwise FastAPI
-# would match "tenant" as a tenant_name and "app_cinnamon" as a doc_id.
-# ===========================================================================
-
-@router.delete("/tenant/{tenant_name}", response_model=TenantDeleteResponse)
-def delete_tenant(tenant_name: str):
-    """
-    Delete an entire tenant's collection from Weaviate.
-
-    WARNING: This permanently removes ALL documents, chunks, and vectors
-    for this tenant. This action cannot be undone.
-
-    Use this when a user deletes their chatbot and all associated data
-    should be cleaned up.
-    """
-    deleted = weaviate_client.delete_collection(tenant_name)
-    if not deleted:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Tenant '{tenant_name}' collection not found"
-        )
-    return TenantDeleteResponse(tenant_name=tenant_name)
-
-
-# ===========================================================================
 # Document List Endpoint
 # ===========================================================================
 
@@ -120,7 +91,10 @@ def list_documents(
     multiple chunks stored in Weaviate). The context field shows
     the first chunk as a preview.
     """
-    return document.get_documents(tenant_name, limit, offset)
+    try:
+        return document.get_documents(tenant_name, limit, offset)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # ===========================================================================
@@ -136,7 +110,10 @@ def get_document(tenant_name: str, doc_id: int):
     along with individual chunk details including their text content,
     tags, and position within the document.
     """
-    result = document.get_document(tenant_name, doc_id)
+    try:
+        result = document.get_document(tenant_name, doc_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     if result is None:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
     return result
@@ -164,7 +141,10 @@ def update_document(
     Use this when a document's content has changed and needs
     fresh embeddings for accurate search results.
     """
-    result = document.update_document(tenant_name, doc_id, body.context, body.tags)
+    try:
+        result = document.update_document(tenant_name, doc_id, body.context, body.tags)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     if result is None:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
     return result
@@ -182,7 +162,10 @@ def delete_document(tenant_name: str, doc_id: int):
     This permanently removes all chunks and their vectors from Weaviate.
     The document ID can be reused after deletion.
     """
-    deleted = document.delete_document(tenant_name, doc_id)
+    try:
+        deleted = document.delete_document(tenant_name, doc_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     if not deleted:
         raise HTTPException(status_code=404, detail=f"Document {doc_id} not found")
     return {"message": "Document deleted successfully", "doc_id": doc_id}
@@ -212,13 +195,16 @@ def search_documents(tenant_name: str, body: SearchRequest):
     Each result includes a **confidence** score (0.0 to 1.0) indicating
     how semantically similar the chunk is to the query.
     """
-    result = document.search(
-        tenant_name=tenant_name,
-        query=body.query,
-        top_k=body.top_k,
-        min_confidence=body.min_confidence,
-        # Filter out empty strings from tags list (e.g. [""] -> None)
-        tags=[t for t in body.tags if t.strip()] or None,
-    )
+    try:
+        result = document.search(
+            tenant_name=tenant_name,
+            query=body.query,
+            top_k=body.top_k,
+            min_confidence=body.min_confidence,
+            # Filter out empty strings from tags list (e.g. [""] -> None)
+            tags=[t for t in body.tags if t.strip()] or None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     # Return only the documents list, no wrapper metadata
     return SearchResponse(documents=result["results"])
